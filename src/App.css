@@ -1145,38 +1145,334 @@ button {
 
 /* Print CSS to export clean white-background PDF reports */
 @media print {
+  /* ===== Global Reset for Print ===== */
+  *, *::before, *::after {
+    color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
   body {
     background: white !important;
-    color: black !important;
-    min-height: auto;
+    color: #111 !important;
+    min-height: auto !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
   }
+  
   body::before, body::after {
     display: none !important;
   }
-  .glass-panel {
-    background: white !important;
-    color: black !important;
-    border: 1px solid #ccc !important;
-    box-shadow: none !important;
-    page-break-inside: avoid;
-  }
-  .btn-primary, .btn-secondary, button {
+
+  /* ===== Hide Non-Essential UI Elements ===== */
+  .header-section,
+  .btn-primary, 
+  .btn-secondary,
+  .no-print,
+  .modal-backdrop,
+  .controls-row,
+  .mic-toggle-btn,
+  .round-control-btn {
     display: none !important;
   }
-  .text-white {
-    color: black !important;
+
+  /* Keep report action buttons hidden */
+  .report-header button {
+    display: none !important;
   }
-  .text-white\/70, .text-white\/50, .text-white\/40 {
+
+  /* ===== Container & Layout ===== */
+  .app-container {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .report-container {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0.5cm !important;
+    gap: 0.75rem !important;
+  }
+
+  /* ===== Glass Panels → White Cards with Borders ===== */
+  .glass-panel {
+    background: white !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    border-radius: 8px !important;
+    color: #111 !important;
+  }
+
+  /* ===== Page Flow — Allow Content Across Pages ===== */
+  .report-container,
+  .questions-list,
+  .overview-row,
+  .details-row {
+    page-break-inside: auto !important;
+    overflow: visible !important;
+  }
+
+  .question-item {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .overview-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr !important;
+    gap: 0.75rem !important;
+  }
+
+  .details-row {
+    display: grid !important;
+    grid-template-columns: 2fr 1fr !important;
+    gap: 0.75rem !important;
+  }
+
+  /* ===== Report Header ===== */
+  .report-header {
+    border-bottom: 2px solid #222 !important;
+    padding-bottom: 0.5rem !important;
+  }
+
+  .report-header h2 {
+    color: #111 !important;
+    font-size: 1.4rem !important;
+  }
+
+  .report-header p {
     color: #444 !important;
   }
-  .text-indigo-300, .text-cyan-400, .text-indigo-400 {
-    color: #312e81 !important; /* dark indigo */
+
+  .report-header strong {
+    color: #111 !important;
   }
-  /* Show detail sections clearly in print */
+
+  /* ===== Score & Chart Cards ===== */
+  .score-card, .radar-card, .summary-card,
+  .pace-chart-card, .presence-card {
+    min-height: auto !important;
+    padding: 1rem !important;
+  }
+
+  .score-card span,
+  .radar-card span,
+  .summary-card span {
+    color: #333 !important;
+  }
+
+  /* Overall score number */
+  .score-card .relative span {
+    color: #111 !important;
+  }
+
+  /* ===== Summary Card ===== */
+  .summary-card p {
+    color: #333 !important;
+  }
+
+  .summary-card div[style*="borderTop"] {
+    border-top-color: #ddd !important;
+  }
+
+  .summary-card div[style*="borderTop"] span {
+    color: #666 !important;
+  }
+
+  /* ===== Presence / Communication Card ===== */
+  .presence-card p {
+    color: #333 !important;
+  }
+
+  /* ===== Questions List Section ===== */
+  .questions-list h3 {
+    color: #111 !important;
+    font-size: 1.1rem !important;
+    margin-bottom: 0.5rem !important;
+    border-bottom: 1px solid #ddd !important;
+    padding-bottom: 0.35rem !important;
+  }
+
+  /* ===== Question Trigger / Header ===== */
+  .question-trigger {
+    color: #111 !important;
+    padding: 0.75rem 1rem !important;
+  }
+
+  .question-trigger-index {
+    background: #eef2ff !important;
+    border-color: #6366f1 !important;
+    color: #4338ca !important;
+  }
+
+  .question-trigger-text h4 {
+    color: #111 !important;
+    font-size: 0.8rem !important;
+  }
+
+  .question-trigger-text p {
+    color: #555 !important;
+  }
+
+  .question-trigger-text p strong {
+    color: #333 !important;
+  }
+
+  /* Score badge in print */
+  .question-score-badge {
+    font-weight: 800 !important;
+    border-width: 2px !important;
+  }
+
+  /* Hide expand/collapse chevrons in print */
+  .question-trigger-right svg {
+    display: none !important;
+  }
+
+  /* ===== Question Details (Accordion Body) ===== */
+  .question-details {
+    padding: 0.75rem 1rem !important;
+    border-top: 1px solid #ddd !important;
+  }
+
+  /* Transcript label */
+  .question-details span[style*="color: rgb(6, 182, 212)"] {
+    color: #0891b2 !important;
+  }
+
+  /* Transcript blockquote */
+  .question-details blockquote {
+    color: #333 !important;
+    border-left-color: #6366f1 !important;
+    background: #f8fafc !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 0 4px 4px 0 !important;
+  }
+
+  /* ===== Strengths & Weaknesses Boxes ===== */
+  .strengths-box {
+    background: #ecfdf5 !important;
+    border-color: #059669 !important;
+  }
+
+  .strengths-box span[style*="color: rgb(16, 185, 129)"] {
+    color: #047857 !important;
+  }
+
+  .strengths-box li {
+    color: #1f2937 !important;
+  }
+
+  .strengths-box li span {
+    color: #059669 !important;
+  }
+
+  .gaps-box {
+    background: #fff1f2 !important;
+    border-color: #e11d48 !important;
+  }
+
+  .gaps-box span[style*="color: rgb(244, 63, 94)"] {
+    color: #be123c !important;
+  }
+
+  .gaps-box li {
+    color: #1f2937 !important;
+  }
+
+  .gaps-box li span {
+    color: #e11d48 !important;
+  }
+
+  /* ===== Advice Box ===== */
+  .advice-box {
+    background: #eef2ff !important;
+    border-color: #6366f1 !important;
+  }
+
+  .advice-box span[style*="color: rgb(165, 180, 252)"] {
+    color: #4338ca !important;
+  }
+
+  .advice-box p {
+    color: #1f2937 !important;
+  }
+
+  /* ===== Chart Canvases ===== */
+  canvas {
+    max-height: 160px !important;
+  }
+
+  /* ===== Generic Typography Overrides ===== */
+  /* Force all white/light text to dark for print readability */
+  [style*="color: white"],
+  [style*="color: rgba(255, 255, 255"],
+  [style*="color: rgba(255,255,255"],
+  [style*="color: rgb(255, 255, 255)"],
+  h2, h3, h4 {
+    color: #111 !important;
+  }
+
+  [style*="color: rgba(255, 255, 255, 0.7)"],
+  [style*="color: rgba(255,255,255,0.7)"],
+  [style*="color: rgba(255, 255, 255, 0.75)"],
+  [style*="color: rgba(255,255,255,0.75)"],
+  [style*="color: rgba(255, 255, 255, 0.8)"],
+  [style*="color: rgba(255,255,255,0.8)"],
+  [style*="color: rgba(255, 255, 255, 0.85)"] {
+    color: #333 !important;
+  }
+
+  [style*="color: rgba(255, 255, 255, 0.4)"],
+  [style*="color: rgba(255,255,255,0.4)"],
+  [style*="color: rgba(255, 255, 255, 0.5)"],
+  [style*="color: rgba(255,255,255,0.5)"],
+  [style*="color: rgba(255, 255, 255, 0.6)"],
+  [style*="color: rgba(255,255,255,0.6)"],
+  [style*="color: rgba(255, 255, 255, 0.3)"],
+  [style*="color: rgba(255,255,255,0.3)"] {
+    color: #666 !important;
+  }
+
+  /* Accent colors → print-safe dark versions */
+  [style*="color: rgb(6, 182, 212)"] {
+    color: #0891b2 !important;
+  }
+
+  [style*="color: rgb(99, 102, 241)"] {
+    color: #4338ca !important;
+  }
+
+  [style*="color: rgb(165, 180, 252)"] {
+    color: #4338ca !important;
+  }
+
+  [style*="color: rgb(16, 185, 129)"] {
+    color: #047857 !important;
+  }
+
+  [style*="color: rgb(244, 63, 94)"] {
+    color: #be123c !important;
+  }
+
+  /* ===== Misc ===== */
+  /* Ensure the page title shows the app name */
   details {
     display: block !important;
   }
   details summary {
     display: none !important;
   }
+
+  /* Remove glassmorphism background effects */
+  [style*="backdrop-filter"],
+  [style*="background: rgba(30"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 }
+

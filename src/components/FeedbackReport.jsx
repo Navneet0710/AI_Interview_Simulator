@@ -39,8 +39,23 @@ ChartJS.register(
 
 export default function FeedbackReport({ reportData, onRestart, role, difficulty, type }) {
   const [expandedQuestion, setExpandedQuestion] = useState(0);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const { overallScore, scores, summary, communicationFeedback, questions } = reportData;
+
+  // Listen for print events to expand all questions during PDF export
+  React.useEffect(() => {
+    const beforePrint = () => setIsPrinting(true);
+    const afterPrint = () => setIsPrinting(false);
+    
+    window.addEventListener('beforeprint', beforePrint);
+    window.addEventListener('afterprint', afterPrint);
+    
+    return () => {
+      window.removeEventListener('beforeprint', beforePrint);
+      window.removeEventListener('afterprint', afterPrint);
+    };
+  }, []);
 
   // 1. Doughnut Chart Configuration (Overall Score)
   const doughnutData = {
@@ -202,7 +217,7 @@ export default function FeedbackReport({ reportData, onRestart, role, difficulty
           </p>
         </div>
         
-        <div style={{ display: 'flex', gap: '0.5rem' }} className="print:hidden">
+        <div style={{ display: 'flex', gap: '0.5rem' }} className="no-print">
           <button 
             onClick={handlePrint}
             className="btn-secondary"
@@ -294,13 +309,20 @@ export default function FeedbackReport({ reportData, onRestart, role, difficulty
         </h3>
         
         {questions.map((q, idx) => {
-          const isExpanded = expandedQuestion === idx;
+          const isExpanded = isPrinting || expandedQuestion === idx;
           const scoreColor = q.score >= 85 ? 'text-emerald-400' : q.score >= 70 ? 'text-amber-400' : 'text-rose-400';
           const scoreStyle = q.score >= 85 
             ? { backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)', color: 'rgb(16, 185, 129)' }
             : q.score >= 70 
             ? { backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.2)', color: 'rgb(245, 158, 11)' }
             : { backgroundColor: 'rgba(244, 63, 94, 0.1)', borderColor: 'rgba(244, 63, 94, 0.2)', color: 'rgb(244, 63, 94)' };
+
+          // Print-safe score badge style
+          const printScoreStyle = q.score >= 85 
+            ? { backgroundColor: '#d1fae5', borderColor: '#059669', color: '#065f46' }
+            : q.score >= 70 
+            ? { backgroundColor: '#fef3c7', borderColor: '#d97706', color: '#92400e' }
+            : { backgroundColor: '#ffe4e6', borderColor: '#e11d48', color: '#9f1239' };
 
           return (
             <div 
@@ -347,9 +369,9 @@ export default function FeedbackReport({ reportData, onRestart, role, difficulty
                 </div>
               </button>
 
-              {/* Accordion Content */}
+              {/* Accordion Content — always visible in print, toggled in screen */}
               {isExpanded && (
-                <div className="question-details print:border-black/10">
+                <div className="question-details" style={isPrinting ? { borderTop: '1px solid #ddd' } : {}}>
                   {/* Full transcript answer */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                     <span style={{ fontSize: '0.65rem', fontWeight: '700', letterSpacing: '0.05em', color: 'rgb(6, 182, 212)', textTransform: 'uppercase' }} className="print:text-cyan-600">Your Response Transcript:</span>

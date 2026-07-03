@@ -423,7 +423,7 @@ export default function App() {
   return (
     <div className="app-container">
       {/* App Header logo block */}
-      <header className="header-section print:hidden">
+      <header className="header-section no-print">
         <div className="header-logo">
           <div className="header-icon">AI</div>
           <div className="header-title-group">
