@@ -117,8 +117,12 @@ export default function FeedbackReport({ reportData, onRestart, role, difficulty
   const questionLabels = questions.map((_, idx) => `Q${idx + 1}`);
   
   // Retrieve pacing metrics from actual questions
-  const pacingValues = questions.map((_, idx) => {
-    return reportData.rawPacing?.[idx] || (125 + Math.floor(Math.random() * 20));
+  const pacingValues = questions.map((q, idx) => {
+    const inputMethod = q.inputMethod || 'unknown';
+    if (inputMethod === 'spoken') {
+      return reportData.rawPacing?.[idx] || 0;
+    }
+    return 0; // No WPM data for typed/no responses
   });
 
   const lineData = {
@@ -313,12 +317,23 @@ export default function FeedbackReport({ reportData, onRestart, role, difficulty
                   <span className="question-trigger-index print:border-black/20 print:text-black">
                     {idx + 1}
                   </span>
-                  <div className="question-trigger-text">
+                    <div className="question-trigger-text">
                     <h4>{q.question}</h4>
                     <p>
-                      Pacing: {reportData.rawPacing?.[idx] || 130} WPM &bull; Filler Words: {reportData.rawFillers?.[idx] || 0}
+                      {(() => {
+                        const inputMethod = q.inputMethod || 'unknown';
+                        const pacing = reportData.rawPacing?.[idx] || 0;
+                        const fillers = reportData.rawFillers?.[idx] || 0;
+                        if (inputMethod === 'typed') {
+                          return <>Input: <strong style={{color: 'rgb(165, 180, 252)'}}>Typed Response</strong> &bull; Filler Words: 0</>;
+                        } else if (inputMethod === 'none' || (!q.answer || q.answer === 'No spoken or typed response was recorded.')) {
+                          return <>Input: <strong style={{color: 'rgb(244, 63, 94)'}}>No Response</strong></>;
+                        } else {
+                          return <>Pacing: {pacing > 0 ? `${pacing} WPM` : 'N/A'} &bull; Filler Words: {fillers}</>;
+                        }
+                      })()}
                     </p>
-                  </div>
+                    </div>
                 </div>
                 
                 <div className="question-trigger-right">
@@ -346,6 +361,7 @@ export default function FeedbackReport({ reportData, onRestart, role, difficulty
                   {/* Strengths & Weaknesses */}
                   <div className="strengths-gaps-grid">
                     {/* Strengths */}
+                    {q.strengths && q.strengths.length > 0 && (
                     <div className="strengths-box">
                       <span style={{ fontSize: '0.65rem', fontWeight: '700', letterSpacing: '0.05em', color: 'rgb(16, 185, 129)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                         <ThumbsUp size={12} />
@@ -360,6 +376,7 @@ export default function FeedbackReport({ reportData, onRestart, role, difficulty
                         ))}
                       </ul>
                     </div>
+                    )}
 
                     {/* Weaknesses */}
                     <div className="gaps-box">

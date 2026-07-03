@@ -79,7 +79,7 @@ export default function App() {
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [typedAnswer, setTypedAnswer] = useState('');
   const [currentMetrics, setCurrentMetrics] = useState({
-    wpm: 120,
+    wpm: 0,
     fillerCount: 0,
     fillers: {},
     confidenceScore: 100
@@ -286,15 +286,42 @@ export default function App() {
     const activeQuestion = questions[currentQIndex];
     if (!activeQuestion) return;
 
-    const finalAnswer = (typedAnswer.trim() || currentTranscript.trim() || 'No spoken or typed response was recorded.');
+    // Determine input method and choose the right answer source
+    const hasSpoken = currentTranscript.trim().length > 0;
+    const hasTyped = typedAnswer.trim().length > 0;
+    
+    let finalAnswer;
+    let inputMethod;
+    
+    if (hasTyped && hasSpoken) {
+      // If both typed and spoken, prefer the longer one
+      if (typedAnswer.trim().length >= currentTranscript.trim().length) {
+        finalAnswer = typedAnswer.trim();
+        inputMethod = 'typed';
+      } else {
+        finalAnswer = currentTranscript.trim();
+        inputMethod = 'spoken';
+      }
+    } else if (hasTyped) {
+      finalAnswer = typedAnswer.trim();
+      inputMethod = 'typed';
+    } else if (hasSpoken) {
+      finalAnswer = currentTranscript.trim();
+      inputMethod = 'spoken';
+    } else {
+      finalAnswer = 'No spoken or typed response was recorded.';
+      inputMethod = 'none';
+    }
     
     const answerObject = {
       questionId: activeQuestion.id,
       question: activeQuestion.text,
+      text: activeQuestion.text,
       answer: finalAnswer,
-      wpm: currentMetrics.wpm,
-      fillerCount: currentMetrics.fillerCount,
-      confidenceScore: currentMetrics.confidenceScore
+      inputMethod,
+      wpm: inputMethod === 'spoken' ? currentMetrics.wpm : 0,
+      fillerCount: inputMethod === 'spoken' ? currentMetrics.fillerCount : 0,
+      confidenceScore: inputMethod === 'spoken' ? currentMetrics.confidenceScore : 100
     };
 
     const updatedAnswers = [...interviewAnswers, answerObject];
@@ -303,7 +330,7 @@ export default function App() {
     // Clear state for next question
     setTypedAnswer('');
     setCurrentTranscript('');
-    setCurrentMetrics({ wpm: 120, fillerCount: 0, fillers: {}, confidenceScore: 100 });
+    setCurrentMetrics({ wpm: 0, fillerCount: 0, fillers: {}, confidenceScore: 100 });
     
     const nextIndex = currentQIndex + 1;
     if (nextIndex < questions.length) {
@@ -343,6 +370,14 @@ export default function App() {
       // Embed raw timeline data for chart plotting
       report.rawPacing = completedAnswers.map(ans => ans.wpm);
       report.rawFillers = completedAnswers.map(ans => ans.fillerCount);
+      
+      // Inject inputMethod into each question for the FeedbackReport display
+      if (report.questions) {
+        report.questions = report.questions.map((q, idx) => ({
+          ...q,
+          inputMethod: completedAnswers[idx]?.inputMethod || 'unknown'
+        }));
+      }
 
       setFeedbackReport(report);
       setLoadingReport(false);
@@ -350,16 +385,17 @@ export default function App() {
       console.error(err);
       // Construct a mock feedback report so user doesn't lose progress if API errors out
       const fallbackReport = {
-        overallScore: 78,
-        scores: { technicalDepth: 75, communication: 80, structure: 75, confidence: 85, pacing: 75 },
-        summary: `The simulator successfully recorded your responses, but the ${PROVIDERS[provider]?.name || 'AI'} evaluation encountered an error (${err.message}). Showing a local scorecard evaluation.`,
-        communicationFeedback: 'Microphone speech recognition ran successfully. Pacing and volume metrics are derived locally.',
+        overallScore: 50,
+        scores: { technicalDepth: 50, communication: 50, structure: 50, confidence: 50, pacing: 50 },
+        summary: `The simulator successfully recorded your responses, but the ${PROVIDERS[provider]?.name || 'AI'} evaluation encountered an error (${err.message}). Showing a local scorecard evaluation. Re-run with a valid API key for accurate AI-powered feedback.`,
+        communicationFeedback: 'Unable to generate detailed communication feedback due to API error. Please ensure your API key is valid and try again.',
         questions: completedAnswers.map(ans => ({
           question: ans.question,
           answer: ans.answer,
-          score: 80,
-          strengths: ['Mic recorded answers successfully'],
-          weaknesses: ['Failed to call evaluator API'],
+          score: (!ans.answer || ans.answer === 'No spoken or typed response was recorded.') ? 0 : 50,
+          inputMethod: ans.inputMethod || 'unknown',
+          strengths: (!ans.answer || ans.answer === 'No spoken or typed response was recorded.') ? [] : ['Response was recorded'],
+          weaknesses: ['AI evaluation unavailable — API error occurred'],
           improvement: 'Check your internet connection and API key configuration, then run the simulation again.'
         })),
         rawPacing: completedAnswers.map(ans => ans.wpm),

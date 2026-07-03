@@ -212,38 +212,50 @@ export async function generateFeedbackReport(apiKey, { role, difficulty, type, q
     return getMockReport(role, difficulty, type, questionsAndAnswers);
   }
 
-  const prompt = `You are an expert technical interviewer and communication coach.
+  const prompt = `You are an expert technical interviewer and communication coach. Your job is to give HONEST, CRITICAL feedback.
 Evaluate the candidate's performance in the following interview:
 Role: ${role}
 Difficulty Level: ${difficulty}
 Interview Type: ${type}
 
-Here is the transcript of the questions and the candidate's answers, along with client-side speech metrics (such as words-per-minute pacing and hesitation count):
+Here is the transcript of the questions and the candidate's answers, along with client-side speech metrics and input method:
 ${JSON.stringify(questionsAndAnswers, null, 2)}
 
-Analyze the candidate's answers for technical depth, structural clarity, communication quality, pace (optimal is 110-150 WPM), and confidence (affected by hesitations like filler words "um", "uh", "like", "so").
+CRITICAL SCORING RULES — you MUST follow these strictly:
+1. If the candidate's answer is empty, blank, "No spoken or typed response was recorded.", or contains no meaningful content, the score for that question MUST be between 0 and 5.
+2. If the answer is extremely short (under 15 words), vague, or completely irrelevant to the question, the score MUST be between 5 and 25.
+3. If the answer shows some understanding but lacks depth or misses key points, score between 25 and 55.
+4. If the answer is decent but could be improved, score between 55 and 75.
+5. If the answer is good with solid technical depth, score between 75 and 90.
+6. Only score above 90 for truly exceptional, comprehensive answers that demonstrate deep expertise.
+7. The overallScore should be a weighted average reflecting ALL individual question scores. If multiple questions were unanswered, the overall score MUST be very low.
+8. If the inputMethod is "typed", ignore pacing/WPM metrics for that answer since it was typed, not spoken.
+
+Analyze each answer individually for: technical accuracy, relevance to the specific question asked, depth of explanation, structural clarity, and use of specific examples or terminology.
+
+For strengths and weaknesses, be SPECIFIC to each answer — do NOT use generic phrases like "maintained professional tone" or "addressed the core problem" unless the answer genuinely does that. Each question must have DIFFERENT, SPECIFIC feedback.
 
 Generate a comprehensive feedback report.
 You MUST respond with a JSON object matching this structure:
 {
-  "overallScore": 85, 
+  "overallScore": <number 0-100>,
   "scores": {
-    "technicalDepth": 80,
-    "communication": 90,
-    "structure": 85,
-    "confidence": 75,
-    "pacing": 95
+    "technicalDepth": <number 0-100>,
+    "communication": <number 0-100>,
+    "structure": <number 0-100>,
+    "confidence": <number 0-100>,
+    "pacing": <number 0-100>
   },
-  "summary": "Overall summary paragraph analyzing candidate's performance...",
+  "summary": "Overall summary paragraph analyzing candidate's actual performance honestly...",
   "communicationFeedback": "Detailed feedback on communication style, filler words usage, and speech pacing...",
   "questions": [
     {
       "question": "Question text...",
       "answer": "Candidate's response...",
-      "score": 80, 
-      "strengths": ["list of specific strengths in this answer"],
-      "weaknesses": ["list of technical gaps or areas they missed"],
-      "improvement": "Specific actionable advice on how to improve this response..."
+      "score": <number 0-100>,
+      "strengths": ["list of SPECIFIC strengths unique to THIS answer — leave empty array if answer was empty/irrelevant"],
+      "weaknesses": ["list of SPECIFIC gaps unique to THIS answer"],
+      "improvement": "Specific actionable advice for THIS particular question..."
     },
     ...
   ]
@@ -292,48 +304,295 @@ function getMockQuestions(role, difficulty, type) {
   };
 }
 
+// ==========================================
+// Intelligent Mock Report Generator
+// ==========================================
+
+/**
+ * Strength/weakness pools organized by quality tier for realistic variation
+ */
+const STRENGTH_POOLS = {
+  good: [
+    "Demonstrated clear understanding of core concepts",
+    "Provided specific technical examples to support the answer",
+    "Showed awareness of trade-offs and edge cases",
+    "Used appropriate industry terminology throughout",
+    "Structured the response with a logical progression",
+    "Connected the answer to real-world implementation scenarios",
+    "Identified potential bottlenecks and mitigation strategies",
+    "Referenced relevant design patterns or best practices"
+  ],
+  moderate: [
+    "Showed basic familiarity with the topic",
+    "Attempted to provide a structured response",
+    "Touched on some relevant points",
+    "Demonstrated willingness to reason through the problem"
+  ],
+  poor: [
+    // No strengths for very poor answers — empty array returned
+  ]
+};
+
+const WEAKNESS_POOLS = {
+  good: [
+    "Could elaborate more on scalability considerations",
+    "Missing discussion of error handling strategies",
+    "Could benefit from mentioning alternative approaches",
+    "Time complexity analysis was not discussed"
+  ],
+  moderate: [
+    "Answer lacked sufficient technical depth for this level",
+    "Did not address the specific scenario in the question",
+    "Missing concrete examples or implementation details",
+    "Response was too surface-level for the expected expertise",
+    "Failed to discuss trade-offs between different approaches",
+    "Did not demonstrate hands-on experience with the topic"
+  ],
+  poor: [
+    "No substantive response was provided",
+    "Answer was completely irrelevant to the question asked",
+    "Failed to demonstrate any understanding of the topic",
+    "Response was too brief to evaluate technical competency",
+    "Did not attempt to address any aspect of the question"
+  ],
+  empty: [
+    "No response was recorded for this question",
+    "The question was left completely unanswered",
+    "Unable to evaluate — no content provided"
+  ]
+};
+
+const IMPROVEMENT_TEMPLATES = {
+  empty: [
+    "For this question, start by identifying the key concepts being tested, then structure your answer with: (1) a brief definition or overview, (2) your approach, and (3) trade-offs.",
+    "Practice answering this type of question out loud. Even a partial answer is far better than silence — begin with what you know and build from there.",
+    "Review the fundamentals of this topic area. In an interview, it's better to think aloud and show your reasoning process than to remain silent."
+  ],
+  short: [
+    "Expand your answer by including specific examples from your experience. The STAR method (Situation, Task, Action, Result) works well for structuring detailed responses.",
+    "Your answer needs more depth. Try to cover: what the concept is, how it works under the hood, when you'd use it vs alternatives, and any pitfalls you've encountered.",
+    "Aim for at least 60-90 seconds of speaking time per question. Break down your answer into clear sections and provide concrete examples."
+  ],
+  moderate: [
+    "Good foundation, but dive deeper into implementation details. Discuss specific algorithms, data structures, or patterns you'd use and why.",
+    "Strengthen your answer by addressing edge cases, error scenarios, and how you'd test your solution in production.",
+    "Add more structure to your response: lead with a summary, walk through your approach step by step, and conclude with trade-offs."
+  ],
+  good: [
+    "Strong answer overall. To make it exceptional, compare multiple approaches and explain why you chose one over another.",
+    "Consider adding metrics or benchmarks from your past experience to make your answer more compelling and evidence-based."
+  ]
+};
+
+/**
+ * Picks N random items from an array without repetition
+ */
+function pickRandom(arr, n) {
+  const shuffled = [...arr].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, Math.min(n, arr.length));
+}
+
+/**
+ * Analyzes answer quality and returns a realistic score
+ */
+function analyzeAnswerQuality(answer, question) {
+  const noResponse = !answer || 
+    answer === 'No spoken or typed response was recorded.' ||
+    answer.trim().length === 0;
+  
+  if (noResponse) {
+    return { tier: 'empty', score: Math.floor(Math.random() * 5) }; // 0-4
+  }
+
+  const wordCount = answer.trim().split(/\s+/).filter(w => w.length > 0).length;
+  const questionWords = question.toLowerCase().split(/\s+/);
+  
+  // Check for keyword relevance (very basic heuristic)
+  const technicalKeywords = ['react', 'dom', 'hook', 'state', 'render', 'component', 'api', 'database', 
+    'server', 'client', 'algorithm', 'design', 'system', 'scale', 'cache', 'queue', 'load',
+    'performance', 'optimize', 'architecture', 'pattern', 'test', 'deploy', 'container',
+    'kubernetes', 'docker', 'microservice', 'rest', 'graphql', 'sql', 'nosql', 'redis',
+    'team', 'project', 'deadline', 'conflict', 'challenge', 'solution', 'learn', 'improve',
+    'experience', 'approach', 'strategy', 'result', 'impact', 'collaboration'];
+  
+  const answerLower = answer.toLowerCase();
+  let relevanceHits = 0;
+  technicalKeywords.forEach(kw => {
+    if (answerLower.includes(kw)) relevanceHits++;
+  });
+
+  // Also check if answer contains words from the question itself
+  let questionOverlap = 0;
+  questionWords.forEach(qw => {
+    if (qw.length > 3 && answerLower.includes(qw)) questionOverlap++;
+  });
+
+  if (wordCount < 8) {
+    // Very short answer
+    return { tier: 'short', score: 5 + Math.floor(Math.random() * 15) }; // 5-19
+  }
+
+  if (wordCount < 20) {
+    // Short answer
+    const base = relevanceHits > 1 ? 20 : 10;
+    return { tier: 'short', score: base + Math.floor(Math.random() * 15) }; // 10-34
+  }
+
+  if (wordCount < 40) {
+    // Below average length
+    const base = relevanceHits > 2 ? 30 : 20;
+    return { tier: 'moderate', score: base + Math.floor(Math.random() * 20) }; // 20-49
+  }
+
+  if (wordCount < 80) {
+    // Moderate length
+    const base = relevanceHits > 3 ? 50 : 35;
+    return { tier: 'moderate', score: base + Math.floor(Math.random() * 20) }; // 35-69
+  }
+
+  if (wordCount < 150) {
+    // Decent length
+    const relevanceBonus = Math.min(15, relevanceHits * 3);
+    const base = 55 + relevanceBonus;
+    return { tier: 'good', score: Math.min(85, base + Math.floor(Math.random() * 10)) }; // 55-85
+  }
+
+  // Long, detailed answer
+  const relevanceBonus = Math.min(15, relevanceHits * 2);
+  const base = 65 + relevanceBonus;
+  return { tier: 'good', score: Math.min(92, base + Math.floor(Math.random() * 10)) }; // 65-92
+}
+
 function getMockReport(role, difficulty, type, questionsAndAnswers) {
-  const wpmList = questionsAndAnswers.map(q => q.wpm).filter(w => w > 0);
-  const avgWpm = wpmList.length ? Math.round(wpmList.reduce((a, b) => a + b, 0) / wpmList.length) : 130;
+  // Analyze each question individually
+  const questionResults = questionsAndAnswers.map((q, idx) => {
+    const qText = q.text || q.question || `Question ${idx + 1}`;
+    const aText = q.answer || '';
+    const inputMethod = q.inputMethod || 'unknown';
+    
+    const analysis = analyzeAnswerQuality(aText, qText);
+    
+    // Generate per-question specific feedback based on tier
+    let strengths = [];
+    let weaknesses = [];
+    let improvement = '';
+
+    switch (analysis.tier) {
+      case 'empty':
+        strengths = [];
+        weaknesses = pickRandom(WEAKNESS_POOLS.empty, 2);
+        improvement = pickRandom(IMPROVEMENT_TEMPLATES.empty, 1)[0];
+        break;
+      case 'short':
+        strengths = pickRandom(STRENGTH_POOLS.moderate, 1);
+        weaknesses = pickRandom(WEAKNESS_POOLS.poor, 2).concat(pickRandom(WEAKNESS_POOLS.moderate, 1));
+        improvement = pickRandom(IMPROVEMENT_TEMPLATES.short, 1)[0];
+        break;
+      case 'moderate':
+        strengths = pickRandom(STRENGTH_POOLS.moderate, 2);
+        weaknesses = pickRandom(WEAKNESS_POOLS.moderate, 2);
+        improvement = pickRandom(IMPROVEMENT_TEMPLATES.moderate, 1)[0];
+        break;
+      case 'good':
+        strengths = pickRandom(STRENGTH_POOLS.good, 3);
+        weaknesses = pickRandom(WEAKNESS_POOLS.good, 2);
+        improvement = pickRandom(IMPROVEMENT_TEMPLATES.good, 1)[0];
+        break;
+    }
+    
+    return {
+      question: qText,
+      answer: aText || 'No spoken or typed response was recorded.',
+      score: analysis.score,
+      strengths,
+      weaknesses,
+      improvement,
+      inputMethod
+    };
+  });
+
+  // Calculate aggregate scores based on actual performance
+  const questionScores = questionResults.map(q => q.score);
+  const avgQuestionScore = questionScores.length 
+    ? Math.round(questionScores.reduce((a, b) => a + b, 0) / questionScores.length) 
+    : 0;
+  
+  // Check how many questions had actual spoken responses
+  const spokenAnswers = questionsAndAnswers.filter(q => q.inputMethod === 'spoken');
+  const wpmList = spokenAnswers.map(q => q.wpm).filter(w => w > 0);
+  const avgWpm = wpmList.length ? Math.round(wpmList.reduce((a, b) => a + b, 0) / wpmList.length) : 0;
   const totalFillers = questionsAndAnswers.reduce((sum, q) => sum + (q.fillerCount || 0), 0);
   
-  const paceScore = avgWpm >= 110 && avgWpm <= 150 ? 95 : avgWpm > 150 ? 75 : 65;
-  const confidenceScore = Math.max(50, 100 - (totalFillers * 5));
-  const technicalDepth = 78 + Math.floor(Math.random() * 12);
-  const communication = Math.max(60, Math.round((paceScore + confidenceScore) / 2));
-  const structure = 80 + Math.floor(Math.random() * 10);
-  const overallScore = Math.round((technicalDepth * 0.4) + (communication * 0.3) + (structure * 0.2) + (paceScore * 0.1));
+  // Pacing score — only relevant if there were spoken answers
+  let paceScore = 50; // default for no spoken data
+  if (wpmList.length > 0) {
+    paceScore = avgWpm >= 110 && avgWpm <= 150 ? 90 : avgWpm > 150 ? 65 : avgWpm > 0 ? 55 : 30;
+  }
+  
+  const confidenceScore = wpmList.length > 0 
+    ? Math.max(30, 100 - (totalFillers * 5))
+    : 50; // default if no speech data
+
+  // Technical depth is strongly tied to answer quality
+  const technicalDepth = Math.max(5, avgQuestionScore + Math.floor(Math.random() * 6) - 3);
+  
+  // Communication depends on whether they actually spoke
+  const answeredCount = questionsAndAnswers.filter(q => 
+    q.answer && q.answer !== 'No spoken or typed response was recorded.' && q.answer.trim().length > 0
+  ).length;
+  const answerRate = answeredCount / Math.max(1, questionsAndAnswers.length);
+  const communication = Math.max(5, Math.round(answerRate * 70 + (wpmList.length > 0 ? 20 : 0) + Math.random() * 10));
+  
+  // Structure tied to answer quality
+  const structure = Math.max(5, avgQuestionScore + Math.floor(Math.random() * 10) - 5);
+
+  // Overall score: weighted average with heavy emphasis on actual answer quality
+  const overallScore = Math.max(0, Math.min(100, Math.round(
+    (technicalDepth * 0.40) + 
+    (communication * 0.25) + 
+    (structure * 0.20) + 
+    (confidenceScore * 0.10) + 
+    (paceScore * 0.05)
+  )));
+
+  // Generate appropriate summary
+  let summaryText;
+  if (overallScore < 20) {
+    summaryText = `The candidate struggled significantly during the ${difficulty} ${role} interview (${type}). Most questions were either unanswered or received very brief responses that did not demonstrate the expected technical competency. Substantial preparation is needed before the next attempt.`;
+  } else if (overallScore < 40) {
+    summaryText = `The candidate showed limited readiness for the ${difficulty} ${role} position (${type}). While some questions received responses, the depth and specificity were below expectations. Focus on strengthening core technical knowledge and practicing structured answers.`;
+  } else if (overallScore < 60) {
+    summaryText = `The candidate demonstrated partial understanding during the ${difficulty} ${role} interview (${type}). Some answers showed promise but lacked the depth and structure expected at this level. More practice with timed responses and deeper technical study would be beneficial.`;
+  } else if (overallScore < 80) {
+    summaryText = `The candidate showed a solid performance interviewing for the ${difficulty} ${role} role (${type}). They demonstrated clear domain understanding, though some technical explanations could be structured more tightly. Overall a promising interview with room for improvement.`;
+  } else {
+    summaryText = `The candidate performed excellently in the ${difficulty} ${role} interview (${type}). Responses were detailed, well-structured, and demonstrated strong technical expertise. Minor refinements in specific areas would make the candidate even more competitive.`;
+  }
+
+  // Communication feedback
+  let commFeedback;
+  if (wpmList.length === 0) {
+    const typedCount = questionsAndAnswers.filter(q => q.inputMethod === 'typed').length;
+    if (typedCount > 0) {
+      commFeedback = `All responses were typed rather than spoken, so speech pacing metrics are not available. In a real interview, practicing verbal responses is crucial — try switching to microphone mode to build comfort with speaking your answers. You used a total of ${totalFillers} filler words throughout the session.`;
+    } else {
+      commFeedback = `No speech data was recorded during this session. To get meaningful communication feedback, try answering questions verbally using the microphone. Verbal communication skills are a critical component of interview performance.`;
+    }
+  } else {
+    commFeedback = `Your average speaking pace was ${avgWpm} WPM, which is ${avgWpm >= 110 && avgWpm <= 150 ? 'right in the sweet spot for professional communication (110-150 WPM).' : avgWpm > 150 ? 'a bit fast. Try to pause for emphasis to help the interviewer follow.' : 'a bit slow. Try to speak with slightly more energy.'} You used a total of ${totalFillers} filler words (like 'um', 'uh', 'like') throughout the session. Working on minimizing these hesitations will significantly improve your overall executive presence.`;
+  }
 
   return {
     overallScore,
     scores: {
-      technicalDepth,
-      communication,
-      structure,
-      confidence: confidenceScore,
-      pacing: paceScore
+      technicalDepth: Math.min(100, technicalDepth),
+      communication: Math.min(100, communication),
+      structure: Math.min(100, structure),
+      confidence: Math.min(100, confidenceScore),
+      pacing: Math.min(100, paceScore)
     },
-    summary: `The candidate showed a solid performance interviewing for the ${difficulty} ${role} role (${type}). They demonstrated clear domain understanding, though some technical explanations could be structured more tightly. Communication was generally strong with a steady talking pace of ${avgWpm} WPM.`,
-    communicationFeedback: `Your average speaking pace was ${avgWpm} WPM, which is ${avgWpm >= 110 && avgWpm <= 150 ? 'right in the sweet spot for professional communication (110-150 WPM).' : avgWpm > 150 ? 'a bit fast. Try to pause for emphasis to help the interviewer follow.' : 'a bit slow. Try to speak with slightly more energy.'} You used a total of ${totalFillers} filler words (like 'um', 'uh', 'like') throughout the session. Working on minimizing these hesitations will significantly improve your overall executive presence.`,
-    questions: questionsAndAnswers.map((q, idx) => {
-      const qText = q.text || `Question ${idx + 1}`;
-      const aText = q.answer || `No response provided.`;
-      
-      return {
-        question: qText,
-        answer: aText,
-        score: Math.min(100, Math.max(40, overallScore + Math.floor(Math.random() * 15) - 7)),
-        strengths: [
-          "Address the core problem directly",
-          "Maintained a professional tone",
-          "Used key industry terminology correctly"
-        ],
-        weaknesses: [
-          "Could go deeper into optimization trade-offs",
-          "Structure could benefit from using the STAR method"
-        ],
-        improvement: `For questions like "${qText.substring(0, 40)}...", structure your response by first giving a high-level summary, then detailing your approach, and finishing with the trade-offs or alternatives.`
-      };
-    })
+    summary: summaryText,
+    communicationFeedback: commFeedback,
+    questions: questionResults
   };
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, MicOff, AlertCircle } from 'lucide-react';
 
 const FILLER_WORDS = ['um', 'uh', 'like', 'so', 'you know', 'actually', 'basically'];
@@ -21,6 +21,14 @@ export default function SpeechTracker({
   const wordCountRef = useRef(0);
   const fillerCountRef = useRef(0);
   const fillersRef = useRef({});
+  // Use a ref to accumulate finalized transcript text to avoid stale closure issues
+  const finalTranscriptRef = useRef('');
+  const isRecordingRef = useRef(isRecording);
+
+  // Keep isRecordingRef in sync
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
 
   // Reset transcript and metrics when resetTrigger changes (e.g. moving to next question)
   useEffect(() => {
@@ -32,20 +40,96 @@ export default function SpeechTracker({
     fillerCountRef.current = 0;
     fillersRef.current = {};
     startTimeRef.current = null;
+    finalTranscriptRef.current = '';
     
+    // Notify parent of reset
+    onTranscriptUpdate('');
+    onMetricsUpdate({
+      wpm: 0,
+      fillerCount: 0,
+      fillers: {},
+      confidenceScore: 100
+    });
+
     if (isListening && recognitionRef.current) {
       try {
         recognitionRef.current.stop();
         setTimeout(() => {
-          if (isRecording) {
-            recognitionRef.current.start();
+          if (isRecordingRef.current) {
+            try {
+              recognitionRef.current.start();
+            } catch (e) {
+              console.error('Error restarting recognition after reset:', e);
+            }
           }
-        }, 100);
+        }, 150);
       } catch (e) {
         console.error(e);
       }
     }
   }, [resetTrigger]);
+
+  const analyzeSpeech = useCallback((text) => {
+    if (!text || !text.trim()) {
+      onMetricsUpdate({
+        wpm: 0,
+        fillerCount: 0,
+        fillers: {},
+        confidenceScore: 100
+      });
+      return;
+    }
+
+    const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+    const count = words.length;
+    wordCountRef.current = count;
+
+    // 1. Calculate WPM (Words Per Minute)
+    let currentWpm = 0;
+    if (startTimeRef.current && count > 0) {
+      const elapsedMinutes = (Date.now() - startTimeRef.current) / 60000;
+      if (elapsedMinutes > 0.05) { // Minimum 3 seconds to avoid spike
+        currentWpm = Math.round(count / elapsedMinutes);
+        // Constrain extreme spikes at the start
+        currentWpm = Math.min(220, currentWpm);
+      } else if (count > 0) {
+        // Short burst estimate
+        currentWpm = Math.min(220, Math.round(count / 0.05));
+      }
+    }
+    setWpm(currentWpm);
+
+    // 2. Count Filler Words
+    let fillersFound = 0;
+    const fillerMap = {};
+    
+    FILLER_WORDS.forEach(filler => {
+      // Use regex to match exact word
+      const regex = new RegExp(`\\b${filler}\\b`, 'gi');
+      const matches = text.match(regex);
+      if (matches) {
+        fillersFound += matches.length;
+        fillerMap[filler] = matches.length;
+      }
+    });
+
+    fillerCountRef.current = fillersFound;
+    fillersRef.current = fillerMap;
+    setFillerCount(fillersFound);
+    setDetectedFillers(fillerMap);
+
+    // Calculate Confidence percentage
+    // Start at 100%, subtract 5% per filler word, and floor at 50%
+    const confidence = Math.max(50, 100 - (fillersFound * 5));
+
+    // Send metrics back to parent — use the freshly computed WPM, not stale state
+    onMetricsUpdate({
+      wpm: currentWpm,
+      fillerCount: fillersFound,
+      fillers: fillerMap,
+      confidenceScore: confidence
+    });
+  }, [onMetricsUpdate]);
 
   // Handle active recording state
   useEffect(() => {
@@ -73,9 +157,13 @@ export default function SpeechTracker({
       recognition.onend = () => {
         setIsListening(false);
         // Automatically restart if we should still be recording
-        if (isRecording) {
+        if (isRecordingRef.current) {
           try {
-            recognition.start();
+            setTimeout(() => {
+              if (isRecordingRef.current && recognitionRef.current) {
+                recognitionRef.current.start();
+              }
+            }, 100);
           } catch (e) {
             console.error('Error restarting recognition:', e);
           }
@@ -86,24 +174,36 @@ export default function SpeechTracker({
         console.error('Speech recognition error:', event.error);
         if (event.error === 'not-allowed') {
           setRecognitionError('Microphone access denied. Please grant microphone permission.');
-        } else if (event.error !== 'no-speech') {
+        } else if (event.error === 'no-speech') {
+          // Silently ignore no-speech errors, they're normal
+        } else if (event.error === 'aborted') {
+          // Silently ignore aborted errors (happens on stop/restart)
+        } else {
           setRecognitionError(`Speech recognition issue: ${event.error}`);
         }
       };
 
       recognition.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
+        let newFinalText = '';
+        let interimText = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const resultText = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript + ' ';
+            newFinalText += resultText + ' ';
           } else {
-            interimTranscript += event.results[i][0].transcript;
+            interimText += resultText;
           }
         }
 
-        const fullText = (transcript + finalTranscript + interimTranscript).trim();
+        // Append any new final text to the accumulated ref
+        if (newFinalText) {
+          finalTranscriptRef.current += newFinalText;
+        }
+
+        // Full display = accumulated finals + current interim
+        const fullText = (finalTranscriptRef.current + interimText).trim();
+        
         setTranscript(fullText);
         onTranscriptUpdate(fullText);
 
@@ -119,7 +219,10 @@ export default function SpeechTracker({
         setRecognitionError('');
         recognitionRef.current.start();
       } catch (e) {
-        // Recognition already started
+        // Recognition already started — this is okay
+        if (e.name !== 'InvalidStateError') {
+          console.error('Recognition start error:', e);
+        }
       }
     } else {
       if (recognitionRef.current) {
@@ -141,62 +244,10 @@ export default function SpeechTracker({
         try {
           recognitionRef.current.stop();
         } catch (e) {}
+        recognitionRef.current = null;
       }
     };
   }, [isRecording]);
-
-  const analyzeSpeech = (text) => {
-    if (!text) return;
-
-    const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-    const count = words.length;
-    wordCountRef.current = count;
-
-    // 1. Calculate WPM (Words Per Minute)
-    if (startTimeRef.current) {
-      const elapsedMinutes = (Date.now() - startTimeRef.current) / 60000;
-      if (elapsedMinutes > 0.05) { // Minimum 3 seconds to avoid spike
-        const currentWpm = Math.round(count / elapsedMinutes);
-        // Constrain extreme spikes at the start
-        const boundedWpm = Math.min(220, currentWpm);
-        setWpm(boundedWpm);
-      } else {
-        // Estimate based on word count before 3s
-        setWpm(Math.round(count / 0.05));
-      }
-    }
-
-    // 2. Count Filler Words
-    let fillersFound = 0;
-    const fillerMap = {};
-    
-    FILLER_WORDS.forEach(filler => {
-      // Use regex to match exact word
-      const regex = new RegExp(`\\b${filler}\\b`, 'gi');
-      const matches = text.match(regex);
-      if (matches) {
-        fillersFound += matches.length;
-        fillerMap[filler] = matches.length;
-      }
-    });
-
-    fillerCountRef.current = fillersFound;
-    fillersRef.current = fillerMap;
-    setFillerCount(fillersFound);
-    setDetectedFillers(fillerMap);
-
-    // Calculate Confidence percentage
-    // Start at 100%, subtract 5% per filler word, and floor at 50%
-    const confidence = Math.max(50, 100 - (fillersFound * 5));
-
-    // Send metrics back to parent
-    onMetricsUpdate({
-      wpm: wpm || Math.round(count / 0.05) || 120,
-      fillerCount: fillersFound,
-      fillers: fillerMap,
-      confidenceScore: confidence
-    });
-  };
 
   const getPacingLabel = (wpmVal) => {
     if (wpmVal === 0) return { label: 'Waiting...', color: 'text-slate-400' };
